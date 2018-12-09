@@ -59,6 +59,11 @@ def get_permissions_url():
 
     return permissions_url
 
+def reset_browser(url):
+    global driver
+    driver = webdriver.Firefox()
+    login_to_facebook()
+    driver.get(url)
 
 # get_attribute_class = 'class'
 # get_attribute_id = 'id'
@@ -127,7 +132,7 @@ def is_wanted_url(curURL):
 #check for success method does window handling. first it checks if the current window has the facebook url.
 #if not it checks for a pop-up window
 def check_for_success(origURL):
-    #todo: check if URL is new, if so check if its the one we want
+    #check if URL is new, if so check if its the one we want
     try:
         WebDriverWait(driver, 1).until(EC.url_contains("scope"))
     except TimeoutException:
@@ -168,7 +173,7 @@ def check_for_success(origURL):
         for window in handles:
             if index > 0:
                 #for each window, check if it is the one we want. if not, close it
-                #todo: if it is window we want, still have to close all the others. get info. then close and return to original handle
+                #if it is window we want, still have to close all the others. get info. then close and return to original handle
                 driver.switch_to.window(window)
                 try:
                     WebDriverWait(driver, timeout).until(EC.url_contains("scope"))
@@ -246,16 +251,12 @@ def try_locate_by_css(matchPattern):
                 print("doesn't exist")
     return found #return if the button was found
 
-
 #this crawls the original dataset, getting each url to
 def run_crawler():
-    results = [] #store results here to be written to final csv at end of run
-    fh = open("crawlResults_CSV.txt", "w") #file to be written to
-
-    #for each top ranked site
+    results = []  # store results here to be written to final csv at end of run
+    # for each top ranked site
     for domain in data:
         rank = domain['rank']
-
         #for each url listed as potentially having a Facebook SSO registration button. attempt to load the url.
         #do not try to load if it has a 404 error of if it is a direct link to facebook (results in (seemingly) endless click times)
         for url in domain['url']:
@@ -267,6 +268,8 @@ def run_crawler():
                         driver.get(url)
                     except Exception as e:
                         print(e)
+                        if "discarded" in str(e) or "without establishing a connection" in str(e):
+                            reset_browser(url) #if browser crashes need to reconnect and relogin to facebook
                         pass
                     try:
                         WebDriverWait(driver,timeout).until(EC.alert_is_present())
@@ -293,25 +296,28 @@ def run_crawler():
                                 num_perms = len(split_perm)
                                 stringToWrite = rank + "," + url_with_button + ",\"" + permission_url + "\"," + str(num_perms) + "," + perm_to_pass + ", \n"
                                 results.append(stringToWrite)
-                                fh1 = open("crawlResultsCSV_temp.txt", "a") #write to temporary file in case of crash.
-                                fh1.write(stringToWrite)
-                                fh1.close()
                                 for item in results:
                                     print(item)
+                                fh1 = open("crawlResultsCSV_temp.txt", "a")  # write to temporary file in case of crash.
+                                fh1.write(stringToWrite)  # store in temp file
+                                fh1.close()
                                 break
                         if foundForDomain is True:
                             break
 
                 except Exception as e:
                     print(e)
+                    if "discarded" in str(e) or "without establishing a connection" in str(e):
+                        reset_browser(url)
                     pass
         if foundForDomain is False:
             stringWrite = rank + "," + url + "," + "NotFound" + "," + "NotFound" + ", \n"
             results.append(stringWrite)
-            fh1 = open("crawlResultsCSV_temp.txt", "a")
-            fh1.write(stringWrite)
+            fh1 = open("crawlResultsCSV_temp.txt", "a")  # write to temporary file in case of crash.
+            fh1.write(stringWrite)  # store in temp file
             fh1.close()
-    #once everything is done being crawled, write the final dataset
+    # once everything is done being crawled, write the final dataset and include runtime
+    fh = open("crawlResults_CSV.txt", "w")  # file to be written to
     for item in results:
         fh.write(item)
     fh.close()
@@ -321,5 +327,10 @@ load_json()
 login_to_facebook()
 run_crawler()
 driver.close()
+
 stop = timeit.default_timer()
+runtime = stop - start
 print('Runtime: ', stop - start)
+fh = open("crawlResults_CSV.txt", "a")
+fh.write("Runtime: " + str(runtime))
+fh.close()
